@@ -8,8 +8,10 @@ import (
 )
 
 type AppConfig struct {
-	ServerAddr string `yaml:"serverAddr`
-	ServerPort int    `yaml:"serverPort"`
+	ServerAddr   string `yaml:"serverAddr`
+	ServerPort   int    `yaml:"serverPort"`
+	ResolverAddr string `yaml:resolverAddr`
+	ResolverPort int    `yaml: resolverPort`
 }
 
 func LoadConfig(name string) (*AppConfig, error) {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net"
 	"os"
@@ -14,6 +15,10 @@ import (
 )
 
 func main() {
+
+	// Serialize the DNS response packet
+	buf := gopacket.NewSerializeBuffer()
+	opts := gopacket.SerializeOptions{}
 
 	config, err := util.LoadConfig("test_config")
 	// exit immediately on non-recoverable(e.g. path issue) config load errors
@@ -33,14 +38,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	// create custom resolver pointing to google's address
+	// create custom resolver pointing to the address specified in the config
 	r := &net.Resolver{
 		PreferGo: true,
+		// definitely clean this up
 		Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
 			d := net.Dialer{
 				Timeout: time.Millisecond * time.Duration(10000),
 			}
-			return d.DialContext(ctx, network, "8.8.8.8:53")
+			return d.DialContext(ctx, network, fmt.Sprintf("%s:%d", net.ParseIP(config.ResolverAddr), config.ResolverPort))
 		},
 	}
 
@@ -57,12 +63,19 @@ func main() {
 		// create packert with default decoding
 		pkt := gopacket.NewPacket(tmp, layers.LayerTypeDNS, gopacket.Default)
 		// create a DNS request from packet
-		dnsRequest := deSerialize(pkt)
-		slog.Info("Request parameters are:", "Source Address", sourceAddr, "DNS Request body", dnsRequest)
+		dnsReq := deSerialize(pkt)
+		slog.Debug("DNS Request incoming from:", "Source Address", sourceAddr)
+		dnsResp, err := forwardDNS(&ctx, r, dnsReq)
+		if err != nil {
+			slog.Error("Error forwardubg DNS request", "err", err)
+			continue
+		}
 
-		ip, _ := r.LookupHost(context.Background(), "www.google.com")
-		slog.Info("IP for lookup request is", "IP", ip)
-		forwardDNS(&ctx, r, dnsRequest)
+		if err := dnsResp.SerializeTo(buf, opts); err != nil {
+			slog.Error("Error serializing DNS response", err)
+			continue
+		}
+		u.WriteTo(buf.Bytes(), sourceAddr)
 	}
 }
 
@@ -80,23 +93,37 @@ func deSerialize(pkt gopacket.Packet) *layers.DNS {
 }
 
 func forwardDNS(ctx *context.Context, r *net.Resolver, dnsReq *layers.DNS) (layers.DNS, error) {
-	dnsResponse := layers.DNS{}
+	dnsResp := layers.DNS{
+		ID: dnsReq.ID,
+		QR: true,
+		AA: true,
+		RD: true,
+		RA: true,
+	}
+
 	for _, q := range dnsReq.Questions {
-		var dnsRecord layers.DNSResourceRecord
-		// append the DNS question to the answer
-		dnsResponse.Questions = append(dnsResponse.Questions, q)
 		// we're only looking up ip4 addresses here
 		ips, err := r.LookupIP(*ctx, "ip4", string(q.Name))
 		if err != nil {
+			dnsResp.ResponseCode = layers.DNSResponseCodeFormErr
 			slog.Error("Error when looking up host ip for query", "Query Name:", q.Name)
+			return dnsResp, err
 		}
-
 		// loop through ip addresses and add as record to answer
 		for _, ip := range ips {
-			dnsRecord.IP = ip
-			dnsResponse.Answers = append(dnsResponse.Answers, dnsRecord)
+			rr := layers.DNSResourceRecord{
+				Name:  []byte(q.Name),
+				Type:  layers.DNSTypeA,
+				Class: layers.DNSClassIN,
+				TTL:   60,
+			}
+			rr.IP = ip
+			dnsResp.Answers = append(dnsResp.Answers, rr)
+			dnsResp.ANCount++
+			dnsResp.OpCode = layers.DNSOpCodeQuery
+			dnsResp.ResponseCode = layers.DNSResponseCodeNoErr
 		}
 	}
-	return dnsResponse, nil
+	return dnsResp, nil
 
 }

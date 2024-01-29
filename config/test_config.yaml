@@ -1,2 +1,4 @@
 serverAddr: "127.0.0.1"
 serverPort: 1053
+resolverAddr: "8.8.8.8"
+resolverPort: 53
