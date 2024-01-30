@@ -2,13 +2,29 @@ module github.com/WarWolf89/dns-forwarder-code-challenge
 
 go 1.21.4
 
-require github.com/spf13/viper v1.18.2
+require (
+	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da
+	github.com/spf13/viper v1.18.2
+)
 
 require (
+	github.com/cespare/xxhash/v2 v2.1.1 // indirect
+	github.com/dustin/go-humanize v1.0.0 // indirect
+	github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b // indirect
+	github.com/golang/protobuf v1.5.3 // indirect
+	github.com/pkg/errors v0.9.1 // indirect
+	github.com/segmentio/fasthash v1.0.3 // indirect
+	github.com/sirupsen/logrus v1.9.0 // indirect
+	google.golang.org/protobuf v1.31.0 // indirect
+)
+
+require (
+	github.com/dgraph-io/ristretto v0.1.1
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
 	github.com/google/gopacket v1.1.19
 	github.com/hashicorp/hcl v1.0.0 // indirect
 	github.com/magiconair/properties v1.8.7 // indirect
+	github.com/mailgun/groupcache/v2 v2.5.0
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/pelletier/go-toml/v2 v2.1.0 // indirect
 	github.com/sagikazarmark/locafero v0.4.0 // indirect
