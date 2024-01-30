@@ -12,72 +12,9 @@ import (
 	"github.com/google/gopacket"
 	layers "github.com/google/gopacket/layers"
 
+	"github.com/WarWolf89/dns-forwarder-code-challenge/src/pkg/forwarder"
 	"github.com/WarWolf89/dns-forwarder-code-challenge/src/pkg/util"
 )
-
-type Resolver struct {
-	res  *net.Resolver
-	Addr string
-	Port int
-}
-
-func (r Resolver) forwardDNS(ctx *context.Context, dnsReq *layers.DNS) (layers.DNS, error) {
-	dnsResp := layers.DNS{
-		ID: dnsReq.ID,
-		QR: true,
-		AA: true,
-		RD: true,
-		RA: true,
-	}
-
-	for _, q := range dnsReq.Questions {
-		// we're only looking up ip4 addresses here
-		ips, err := r.res.LookupIP(*ctx, "ip4", string(q.Name))
-		if err != nil {
-			dnsResp.ResponseCode = layers.DNSResponseCodeFormErr
-			slog.Error("Error when looking up host ip for query", "Query Name:", q.Name)
-			return dnsResp, err
-		}
-		// loop through ip addresses and add as record to answer
-		for _, ip := range ips {
-			rr := layers.DNSResourceRecord{
-				Name:  []byte(q.Name),
-				Type:  layers.DNSTypeA,
-				Class: layers.DNSClassIN,
-				TTL:   60,
-			}
-			rr.IP = ip
-			dnsResp.Answers = append(dnsResp.Answers, rr)
-			dnsResp.ANCount++
-			dnsResp.OpCode = layers.DNSOpCodeQuery
-			dnsResp.ResponseCode = layers.DNSResponseCodeNoErr
-		}
-	}
-	return dnsResp, nil
-}
-
-func fetchDNSRecord(ctx *context.Context, cache ristretto.Cache, dnsReq *layers.DNS, r *Resolver) (interface{}, error) {
-	// Serialize the DNS response packet
-	buf := gopacket.NewSerializeBuffer()
-	opts := gopacket.SerializeOptions{}
-	for _, q := range dnsReq.Questions {
-		record, found := cache.Get(q.Name)
-		if !found {
-			record, err := r.forwardDNS(ctx, dnsReq)
-			if err != nil {
-				return nil, err
-			}
-			if err := record.SerializeTo(buf, opts); err != nil {
-				slog.Error("Error serializing DNS response", err)
-				continue
-			}
-			cache.Set(q.Name, buf.Bytes(), 0)
-			return buf.Bytes(), nil
-		}
-		return record, nil
-	}
-	return buf.Bytes(), nil
-}
 
 func main() {
 	config, err := util.LoadConfig("test_config")
@@ -88,20 +25,18 @@ func main() {
 	}
 
 	// create custom resolver pointing to the address specified in the config
-	r := Resolver{
-		res: &net.Resolver{
-			PreferGo: true,
-			Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
-				d := net.Dialer{
-					Timeout: time.Millisecond * time.Duration(10000),
-				}
-				return d.DialContext(ctx, network, fmt.Sprintf("%s:%d", net.ParseIP(config.ResolverAddr), config.ResolverPort))
-			},
+	// TODO extract to internal type and remove from main.go
+	r := &net.Resolver{
+		PreferGo: true,
+		Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
+			d := net.Dialer{
+				Timeout: time.Millisecond * time.Duration(10000),
+			}
+			return d.DialContext(ctx, network, fmt.Sprintf("%s:%d", net.ParseIP(config.ResolverAddr), config.ResolverPort))
 		},
-		Addr: config.ResolverAddr,
-		Port: config.ResolverPort,
 	}
 
+	// move to cache layer in pkg
 	cache, err := ristretto.NewCache(&ristretto.Config{
 		NumCounters: 1e7,     // number of keys to track frequency of (10M).
 		MaxCost:     1 << 30, // maximum cost of cache (1GB).
@@ -112,6 +47,7 @@ func main() {
 		panic(err)
 	}
 
+	// TODO extract to UDP package
 	//Listen on UDP Port
 	addr := net.UDPAddr{
 		Port: config.ServerPort,
@@ -124,6 +60,7 @@ func main() {
 	}
 
 	// Wait to get request on that port
+	// TODO: is there a better way to do this?
 	for {
 		ctx := context.Background()
 		tmp := make([]byte, 1024)
@@ -136,9 +73,9 @@ func main() {
 		// create packert with default decoding
 		pkt := gopacket.NewPacket(tmp, layers.LayerTypeDNS, gopacket.Default)
 		// create a DNS request from packet
-		dnsReq := deSerialize(pkt)
+		dnsReq := util.CastToDNSLayer(pkt)
 		slog.Debug("DNS Request incoming from:", "Source Address", sourceAddr)
-		dnsResp, err := fetchDNSRecord(&ctx, *cache, dnsReq, &r)
+		dnsResp, err := forwarder.FetchDNSRecord(&ctx, *cache, dnsReq, r)
 		if err != nil {
 			slog.Error("Error forwardubg DNS request", "err", err)
 			continue
@@ -146,17 +83,4 @@ func main() {
 
 		u.WriteTo(dnsResp.([]byte), sourceAddr)
 	}
-}
-
-func deSerialize(pkt gopacket.Packet) *layers.DNS {
-	dnsPacket := pkt.Layer(layers.LayerTypeDNS)
-	if dnsPacket == nil {
-		slog.Error("No DNS type layer on pkt")
-	}
-
-	req, ok := dnsPacket.(*layers.DNS)
-	if !ok {
-		slog.Error("Type assertion error on packet interface is: ", "interface", req)
-	}
-	return req
 }
