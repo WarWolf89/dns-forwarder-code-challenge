@@ -24,6 +24,9 @@ func main() {
 		os.Exit(1)
 	}
 
+	buf := gopacket.NewSerializeBuffer()
+	opts := gopacket.SerializeOptions{}
+
 	// create custom resolver pointing to the address specified in the config
 	// TODO extract to internal type and remove from main.go
 	r := &net.Resolver{
@@ -81,6 +84,10 @@ func main() {
 			continue
 		}
 
-		u.WriteTo(dnsResp.([]byte), sourceAddr)
+		if err := dnsResp.SerializeTo(buf, opts); err != nil {
+			slog.Error("Error serializing DNS response", err)
+		}
+
+		u.WriteTo(buf.Bytes(), sourceAddr)
 	}
 }

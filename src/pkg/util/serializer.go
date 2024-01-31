@@ -22,21 +22,22 @@ func CastToDNSLayer(pkt gopacket.Packet) *layers.DNS {
 	return req
 }
 
-func ToGOB(rr []layers.DNSResourceRecord) []byte {
+func ToGOB(dnsResp layers.DNS) []byte {
+	gob.Register(layers.DNS{})
 	b := bytes.Buffer{}
 	e := gob.NewEncoder(&b)
-	if err := e.Encode(rr); err != nil {
+	if err := e.Encode(dnsResp); err != nil {
 		slog.Error("Failed to gob serialize", err)
 	}
 	return b.Bytes()
 }
 
-func FromGOB(ba []byte) []layers.DNSResourceRecord {
-	rr := []layers.DNSResourceRecord{}
-	b := bytes.Buffer{}
-	d := gob.NewDecoder(&b)
-	if err := d.Decode(&rr); err != nil {
+func FromGOB(ba []byte) layers.DNS {
+	gob.Register(layers.DNS{})
+	dnsResp := layers.DNS{}
+	d := gob.NewDecoder(bytes.NewReader(ba))
+	if err := d.Decode(&dnsResp); err != nil {
 		slog.Error("Failed to gob deserialize", err)
 	}
-	return rr
+	return dnsResp
 }

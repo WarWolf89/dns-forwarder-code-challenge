@@ -37,7 +37,7 @@ func ForwardDNS(ctx *context.Context, dnsReq *layers.DNS, r *net.Resolver) ([]la
 	return answers, len(answers), nil
 }
 
-func FetchDNSRecord(ctx *context.Context, cache ristretto.Cache, dnsReq *layers.DNS, r *net.Resolver) (interface{}, error) {
+func FetchDNSRecord(ctx *context.Context, cache ristretto.Cache, dnsReq *layers.DNS, r *net.Resolver) (layers.DNS, error) {
 
 	dnsResp := layers.DNS{
 		ID: dnsReq.ID,
@@ -53,22 +53,25 @@ func FetchDNSRecord(ctx *context.Context, cache ristretto.Cache, dnsReq *layers.
 		if !found {
 			records, count, err := ForwardDNS(ctx, dnsReq, r)
 			if err != nil {
-				return nil, err
+				return layers.DNS{}, err
 			}
-
-			gobRecs := util.ToGOB(records)
-
-			cache.Set(q.Name, gobRecs, 0)
 
 			dnsResp.Answers = records
 			dnsResp.ANCount = uint16(count)
 			dnsResp.OpCode = layers.DNSOpCodeQuery
 			dnsResp.ResponseCode = layers.DNSResponseCodeNoErr
 
+			gobRecs := util.ToGOB(dnsResp)
+			cache.Set(q.Name, gobRecs, 0)
+
 			return dnsResp, nil
 		}
 
-		dnsResp.Answers = util.FromGOB(records.([]byte))
+		cachedResp := util.FromGOB(records.([]byte))
+		dnsResp.Answers = cachedResp.Answers
+		dnsResp.ANCount = cachedResp.ANCount
+		dnsResp.OpCode = layers.DNSOpCodeQuery
+		dnsResp.ResponseCode = layers.DNSResponseCodeNoErr
 	}
 	return dnsResp, nil
 }
