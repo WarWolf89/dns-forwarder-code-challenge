@@ -9,6 +9,7 @@ import (
 	"github.com/google/gopacket/layers"
 )
 
+// refactor to more global
 func init() {
 	gob.Register(layers.DNS{})
 }
