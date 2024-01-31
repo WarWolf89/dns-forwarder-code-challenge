@@ -9,6 +9,10 @@ import (
 	"github.com/google/gopacket/layers"
 )
 
+func init() {
+	gob.Register(layers.DNS{})
+}
+
 func CastToDNSLayer(pkt gopacket.Packet) *layers.DNS {
 	dnsPacket := pkt.Layer(layers.LayerTypeDNS)
 	if dnsPacket == nil {
@@ -23,7 +27,6 @@ func CastToDNSLayer(pkt gopacket.Packet) *layers.DNS {
 }
 
 func ToGOB(dnsResp layers.DNS) []byte {
-	gob.Register(layers.DNS{})
 	b := bytes.Buffer{}
 	e := gob.NewEncoder(&b)
 	if err := e.Encode(dnsResp); err != nil {
@@ -33,7 +36,6 @@ func ToGOB(dnsResp layers.DNS) []byte {
 }
 
 func FromGOB(ba []byte) layers.DNS {
-	gob.Register(layers.DNS{})
 	dnsResp := layers.DNS{}
 	d := gob.NewDecoder(bytes.NewReader(ba))
 	if err := d.Decode(&dnsResp); err != nil {

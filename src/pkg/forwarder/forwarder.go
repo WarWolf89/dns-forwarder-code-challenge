@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"net"
+	"time"
 
 	"github.com/dgraph-io/ristretto"
 	layers "github.com/google/gopacket/layers"
@@ -28,7 +29,8 @@ func ForwardDNS(ctx *context.Context, dnsReq *layers.DNS, r *net.Resolver) ([]la
 				Name:  []byte(q.Name),
 				Type:  layers.DNSTypeA,
 				Class: layers.DNSClassIN,
-				TTL:   60,
+				// TTL in minutes here
+				TTL: 5,
 			}
 			rr.IP = ip
 			answers = append(answers, rr)
@@ -62,7 +64,7 @@ func FetchDNSRecord(ctx *context.Context, cache ristretto.Cache, dnsReq *layers.
 			dnsResp.ResponseCode = layers.DNSResponseCodeNoErr
 
 			gobRecs := util.ToGOB(dnsResp)
-			cache.Set(q.Name, gobRecs, 0)
+			cache.SetWithTTL(q.Name, gobRecs, 0, 5*time.Second)
 
 			return dnsResp, nil
 		}
