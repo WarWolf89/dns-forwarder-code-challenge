@@ -2,14 +2,15 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
+	"os/signal"
+	"syscall"
 
-	"github.com/google/gopacket"
-	"github.com/google/gopacket/layers"
+	"github.com/miekg/dns"
 
 	"github.com/WarWolf89/dns-forwarder-code-challenge/src/pkg/forwarder"
-	"github.com/WarWolf89/dns-forwarder-code-challenge/src/pkg/udpserver"
 	"github.com/WarWolf89/dns-forwarder-code-challenge/src/pkg/util"
 )
 
@@ -21,40 +22,37 @@ func main() {
 		os.Exit(1)
 	}
 
-	// create custom resolver pointing to the address specified in the config
-
 	fwder, err := forwarder.ProvideService(*config)
 	if err != nil {
 		slog.Error("Error creating the fwder service", err)
 	}
 
-	udps, err := udpserver.ProviderUDPServer(config)
-	if err != nil {
-		slog.Error("error with udp server", err)
-	}
-
-	udps.Run(func(ctx context.Context, in []byte, buffer gopacket.SerializeBuffer) error {
-		opts := gopacket.SerializeOptions{}
-
-		// create packert with default decoding
-		pkt := gopacket.NewPacket(in, layers.LayerTypeDNS, gopacket.Default)
-		// create a DNS request from packet
-		dnsReq := util.CastToDNSLayer(pkt)
-		// slog.Debug("DNS Request incoming from:", "Source Address", sourceAddr)
-		dnsResp, err := fwder.FetchDNSRecord(ctx, dnsReq)
+	srv := &dns.Server{Addr: fmt.Sprintf("%s:%d", config.ServerAddr, config.ServerPort), Net: "udp"}
+	srv.Handler = dns.HandlerFunc(func(w dns.ResponseWriter, r *dns.Msg) {
+		ctx := context.Background()
+		dnsResp, err := fwder.FetchDNSRecord(ctx, r)
 		if err != nil {
-			slog.Error("Error forwardubg DNS request", "err", err)
-			return err
+			slog.Error("Error when forwarding DNS request")
 		}
-
-		if err := dnsResp.SerializeTo(buffer, opts); err != nil {
-			slog.Error("Error serializing DNS response", err)
-			return err
+		if err := w.WriteMsg(dnsResp); err != nil {
+			slog.Error("Error writing message to client", err)
 		}
-		return nil
 	})
 
-	// Wait to get request on that port
-	// TODO: is there a better way to do this?
+	go func() {
 
+		if err := srv.ListenAndServe(); err != nil {
+			slog.Error("Failed to set udp listener:", err)
+			panic(err)
+		}
+
+	}()
+
+	slog.Info("Ready for foward notifies on port", "port", config.ServerPort)
+
+	sig := make(chan os.Signal)
+	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
+	s := <-sig
+	slog.Error("Signal received, stopping", "sig", s)
+	srv.Shutdown()
 }
