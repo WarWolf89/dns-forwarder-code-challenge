@@ -63,6 +63,8 @@ func ProvideService(config util.AppConfig) (Forwarder, error) {
 }
 
 func (s Service) FetchDNSRecord(ctx context.Context, req *dns.Msg) (*dns.Msg, error) {
+	// set default ttl to 1 seconds for cache, if not set defaults to 0 which means it never expires
+	ttl := uint32(1)
 	dnsResp := &dns.Msg{}
 	// Serialize the DNS response packet
 	for _, q := range req.Question {
@@ -72,11 +74,21 @@ func (s Service) FetchDNSRecord(ctx context.Context, req *dns.Msg) (*dns.Msg, er
 			if err != nil {
 				return nil, err
 			}
+
+			// iterate through answers, find the shortest ttl, set it as ttl in cache
+			ttl = response.Answer[0].Header().Ttl
+			for _, a := range response.Answer {
+				ttlCurrent := a.Header().Ttl
+				if ttl > ttlCurrent {
+					ttl = ttlCurrent
+				}
+
+			}
 			// util function that returns a layer dns and add parameters to it that are manually set
 			// resp := createDNSResponse(id, records, count) response
-
 			gobRecs := util.ToGOB(*response)
-			s.cache.SetWithTTL(q.Name, gobRecs, 0, 5*time.Second)
+			dur := time.Duration(ttl) * time.Second
+			s.cache.SetWithTTL(q.Name, gobRecs, 0, dur)
 
 			return response, nil
 		}
