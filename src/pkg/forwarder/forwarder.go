@@ -26,9 +26,12 @@ type Service struct {
 
 func ProvideService(config util.AppConfig) (Forwarder, error) {
 
-	// need to register the DNS type for the serializer
+	// need to register the MSG type for the serializer
 	gob.Register(dns.Msg{})
-	gob.Register(dns.CNAME{})
+	// RR is an interface pointing to the RR_Header, therefore we need to register pointers for the header fields
+	gob.Register(&dns.CNAME{})
+	gob.Register(&dns.A{})
+	gob.Register(&dns.OPT{})
 
 	// move to cache layer in pkg, possibly move gob here
 	cache, err := ristretto.NewCache(&ristretto.Config{
