@@ -25,6 +25,8 @@ func main() {
 	fwder, err := forwarder.ProvideService(*config)
 	if err != nil {
 		slog.Error("Error creating the fwder service", err)
+		// OS exit since this is unrecoverable(e.g. cache setup failure)
+		os.Exit(1)
 	}
 
 	srv := &dns.Server{Addr: fmt.Sprintf("%s:%d", config.ServerAddr, config.ServerPort), Net: "udp"}

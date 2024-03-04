@@ -29,6 +29,7 @@ func ProvideService(config util.AppConfig) (Forwarder, error) {
 	// need to register the MSG type for the serializer
 	gob.Register(dns.Msg{})
 	// RR is an interface pointing to the RR_Header, therefore we need to register pointers for the header fields
+	gob.Register(&dns.RR_Header{})
 	gob.Register(&dns.CNAME{})
 	gob.Register(&dns.A{})
 	gob.Register(&dns.OPT{})
@@ -41,11 +42,6 @@ func ProvideService(config util.AppConfig) (Forwarder, error) {
 	})
 	if err != nil {
 		slog.Error("Error setting up cache", err)
-		return nil, err
-	}
-
-	if err != nil {
-		slog.Error("error dialing resolver", err)
 		return nil, err
 	}
 	return Service{
@@ -85,10 +81,9 @@ func (s Service) FetchDNSRecord(ctx context.Context, req *dns.Msg) (*dns.Msg, er
 
 			}
 			// util function that returns a layer dns and add parameters to it that are manually set
-			// resp := createDNSResponse(id, records, count) response
 			gobRecs := util.ToGOB(*response)
 			dur := time.Duration(ttl) * time.Second
-			s.cache.SetWithTTL(q.Name, gobRecs, 0, dur)
+			s.cache.SetWithTTL(q.Name, gobRecs, 1, dur)
 
 			return response, nil
 		}
