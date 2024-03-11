@@ -15,9 +15,6 @@ import (
 
 func main() {
 
-	lvl := new(slog.LevelVar)
-	lvl.Set(slog.LevelDebug)
-
 	killChan := make(chan os.Signal, 1)
 	signal.Notify(killChan, syscall.SIGINT, syscall.SIGTERM)
 
